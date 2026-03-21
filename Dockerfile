@@ -1,5 +1,5 @@
-# use node 20 alpine image
-FROM node:20-alpine
+# use node 22 alpine image
+FROM node:22-alpine
 
 # create destination directory
 RUN mkdir -p /usr/src/nuxt-app
