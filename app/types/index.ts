@@ -37,6 +37,7 @@ export interface CreatePluginRequest {
   description?: string;
   version: string;
   filename: string;
+  file_size: number;
 }
 
 export interface CreatePluginResponse {

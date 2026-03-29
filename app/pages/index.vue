@@ -114,8 +114,19 @@ const openEditDialog = (plugin: Plugin) => {
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    selectedFile.value = target.files[0]
-    formData.value.filename = selectedFile.value.name
+    const file = target.files[0]
+    const maxSize = 210 * 1024 * 1024 // 210MB
+    
+    if (file.size > maxSize) {
+      alert(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max allowed is 210MB.`)
+      target.value = ''
+      selectedFile.value = null
+      return
+    }
+
+    selectedFile.value = file
+    formData.value.filename = file.name
+    formData.value.file_size = file.size
   }
 }
 
@@ -476,7 +487,7 @@ onMounted(async () => {
                 >
                   <UploadCloud class="w-6 h-6 text-emerald-500 mb-2 group-hover:scale-110 transition-transform" />
                   <p class="text-sm font-bold text-white text-center px-4 truncate w-full">{{ selectedFile ? selectedFile.name : 'Select binary asset' }}</p>
-                  <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-[0.1em] font-black">JAR or JS • MAX 50MB</p>
+                  <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-[0.1em] font-black">JAR or JS • MAX 210MB</p>
                   <input ref="fileInput" type="file" class="hidden" @change="handleFileChange" />
                 </div>
                 <div v-else class="h-[134px] flex items-center justify-center bg-white/5 rounded-xl border border-white/10">
