@@ -39,62 +39,62 @@ definePageMeta({
         Back to Marketplace
       </NuxtLink>
 
-      <div class="text-center mb-8">
-        <div class="inline-flex p-3 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-500/20 mb-4">
-          <RefreshCw class="w-8 h-8 text-emerald-500" />
+      <div class="text-center mb-6">
+        <div class="inline-flex p-2.5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-500/20 mb-3">
+          <RefreshCw class="w-6 h-6 text-emerald-500" />
         </div>
-        <h1 class="text-4xl font-bold tracking-tight mb-2">Welcome Back</h1>
-        <p class="text-muted-foreground">Sign in to manage your StressPilot plugins</p>
+        <h1 class="text-3xl font-bold tracking-tight mb-1.5">Welcome Back</h1>
+        <p class="text-sm text-muted-foreground">Sign in to manage your StressPilot plugins</p>
       </div>
 
-      <Card class="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-3xl overflow-hidden">
-        <CardContent class="pt-8 px-8">
-          <form @submit.prevent="handleLogin" class="space-y-6">
+      <Card class="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-2xl overflow-hidden">
+        <CardContent class="pt-6 px-6">
+          <form @submit.prevent="handleLogin" class="space-y-5">
             <div class="space-y-2">
-              <Label for="email" class="text-xs font-bold uppercase tracking-widest text-emerald-500/70 ml-1">Email Address</Label>
+              <Label for="email" class="text-[10px] font-bold uppercase tracking-widest text-emerald-500/70 ml-1">Email Address</Label>
               <div class="relative group">
-                <Mail class="absolute left-3.5 top-3.5 w-5 h-5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                <Mail class="absolute left-3 top-3 w-4.5 h-4.5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   id="email" 
                   v-model="email" 
                   type="email" 
                   placeholder="name@example.com"
                   required
-                  class="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
+                  class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
                 />
               </div>
             </div>
 
             <div class="space-y-2">
               <div class="flex justify-between items-center ml-1">
-                <Label for="password" class="text-xs font-bold uppercase tracking-widest text-emerald-500/70">Password</Label>
-                <a href="#" class="text-[10px] text-emerald-500 hover:underline uppercase font-bold tracking-wider">Forgot?</a>
+                <Label for="password" class="text-[10px] font-bold uppercase tracking-widest text-emerald-500/70">Password</Label>
+                <a href="#" class="text-[9px] text-emerald-500 hover:underline uppercase font-bold tracking-wider">Forgot?</a>
               </div>
               <div class="relative group">
-                <Lock class="absolute left-3.5 top-3.5 w-5 h-5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                <Lock class="absolute left-3 top-3 w-4.5 h-4.5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   id="password" 
                   v-model="password" 
                   type="password" 
                   placeholder="••••••••"
                   required
-                  class="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
+                  class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
                 />
               </div>
             </div>
 
-            <div v-if="errorMsg" class="bg-destructive/10 border border-destructive/20 text-destructive text-xs py-3 px-4 rounded-xl flex items-center gap-2">
-              <AlertCircle class="w-4 h-4" />
+            <div v-if="errorMsg" class="bg-destructive/10 border border-destructive/20 text-destructive text-[10px] py-2.5 px-4 rounded-lg flex items-center gap-2">
+              <AlertCircle class="w-3.5 h-3.5" />
               {{ errorMsg }}
             </div>
 
             <Button 
               type="submit" 
               :disabled="loading" 
-              class="w-full h-12 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-base shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
+              class="w-full h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
             >
               <template v-if="loading">
-                <Loader2 class="w-5 h-5 animate-spin mr-2" />
+                <Loader2 class="w-4 h-4 animate-spin mr-2" />
                 Authenticating...
               </template>
               <template v-else>
@@ -103,8 +103,8 @@ definePageMeta({
             </Button>
           </form>
         </CardContent>
-        <CardFooter class="pb-8 pt-4 px-8 flex flex-col gap-4">
-          <p class="text-center text-sm text-muted-foreground font-medium">
+        <CardFooter class="pb-6 pt-3 px-6 flex flex-col gap-3">
+          <p class="text-center text-xs text-muted-foreground font-medium">
             Don't have an account? 
             <NuxtLink to="/signup" class="text-emerald-500 font-bold hover:underline">Create one</NuxtLink>
           </p>
