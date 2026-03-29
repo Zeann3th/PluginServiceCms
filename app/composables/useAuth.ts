@@ -25,7 +25,7 @@ export const useAuth = () => {
   const config = useRuntimeConfig()
   
   // Base users API URL
-  const apiBase = config.public.apiBase.replace('/plugins', '/users')
+  const apiBase = `${config.public.apiBase}/api/v1/users`
 
   const login = async (email: string, password: string) => {
     try {

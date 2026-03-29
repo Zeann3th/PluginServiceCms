@@ -10,7 +10,7 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     public: {
-      apiBase: '/api/v1/plugins'
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'https://plugins.stresspilot.zeann3th.com'
     }
   },
   colorMode: {

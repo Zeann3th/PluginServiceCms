@@ -12,7 +12,7 @@ import type {
 
 const { user, token, logout, fetchProfile, isAuthenticated } = useAuth()
 const config = useRuntimeConfig()
-const apiBase = config.public.apiBase
+const apiBase = `${config.public.apiBase}/api/v1/plugins`
 
 // State
 const plugins = ref<Plugin[]>([])
