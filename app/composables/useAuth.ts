@@ -27,11 +27,11 @@ export const useAuth = () => {
   // Base users API URL
   const apiBase = `${config.public.apiBase}/api/v1/users`
 
-  const login = async (email: string, password: string) => {
+  const login = async (identifier: string, password: string) => {
     try {
       const response = await $fetch<ApiResponse<AuthResponse>>(`${apiBase}/signin`, {
         method: 'POST',
-        body: { email, password }
+        body: { identifier, password }
       })
 
       if (response && response.data) {
