@@ -467,9 +467,10 @@ onMounted(async () => {
                 <textarea v-model="formData.description" placeholder="Explain what this extension solves..." class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm h-[134px] focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none"></textarea>
               </div>
 
-              <div v-if="!isEditMode" class="space-y-2">
+              <div class="space-y-2">
                 <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Asset Pipeline</Label>
                 <div 
+                  v-if="!isEditMode"
                   class="border-2 border-dashed border-white/10 rounded-xl h-[134px] flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 hover:border-emerald-500/30 transition-all group"
                   @click="$refs.fileInput.click()"
                 >
