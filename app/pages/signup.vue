@@ -33,35 +33,35 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#020817] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/20 rounded-full blur-[120px] animate-pulse-slow"></div>
-    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/10 rounded-full blur-[120px] animate-pulse-slow" style="animation-delay: 2s"></div>
+  <div class="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans transition-colors duration-300">
+    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/20 dark:bg-emerald-500/10 rounded-full blur-[120px] animate-pulse-slow"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-[120px] animate-pulse-slow" style="animation-delay: 2s"></div>
     
     <div class="w-full max-w-md z-10">
-      <NuxtLink to="/login" class="inline-flex items-center text-xs font-bold uppercase tracking-widest text-white/40 hover:text-emerald-500 transition-colors mb-8 group">
+      <NuxtLink to="/login" class="inline-flex items-center text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-emerald-500 transition-colors mb-8 group">
         <ArrowLeft class="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
         Back to Sign In
       </NuxtLink>
 
       <div class="text-center mb-6">
-        <h1 class="text-3xl font-bold tracking-tight mb-1.5">Create Account</h1>
+        <h1 class="text-3xl font-bold tracking-tight mb-1.5 text-foreground">Create Account</h1>
         <p class="text-sm text-muted-foreground">Join the StressPilot developer community</p>
       </div>
 
-      <Card class="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-2xl overflow-hidden">
+      <Card class="bg-card/40 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
         <CardContent class="pt-6 px-6">
           <form @submit.prevent="handleSignup" class="space-y-4">
              <div class="space-y-1.5">
               <Label for="username" class="text-[10px] font-bold uppercase tracking-widest text-emerald-500/70 ml-1">Username</Label>
               <div class="relative group">
-                <User class="absolute left-3 top-3 w-4.5 h-4.5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                <User class="absolute left-3 top-3 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   id="username" 
                   v-model="username" 
                   type="text" 
                   placeholder="pilot_dev"
                   required
-                  class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
+                  class="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
                 />
               </div>
             </div>
@@ -69,14 +69,14 @@ definePageMeta({
             <div class="space-y-1.5">
               <Label for="email" class="text-[10px] font-bold uppercase tracking-widest text-emerald-500/70 ml-1">Email Address</Label>
               <div class="relative group">
-                <Mail class="absolute left-3 top-3 w-4.5 h-4.5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                <Mail class="absolute left-3 top-3 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   id="email" 
                   v-model="email" 
                   type="email" 
                   placeholder="dev@stresspilot.com"
                   required
-                  class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
+                  class="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
                 />
               </div>
             </div>
@@ -84,14 +84,14 @@ definePageMeta({
             <div class="space-y-1.5">
               <Label for="password" class="text-[10px] font-bold uppercase tracking-widest text-emerald-500/70 ml-1">Password</Label>
               <div class="relative group">
-                <Lock class="absolute left-3 top-3 w-4.5 h-4.5 text-white/20 group-focus-within:text-emerald-500 transition-colors" />
+                <Lock class="absolute left-3 top-3 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   id="password" 
                   v-model="password" 
                   type="password" 
                   placeholder="••••••••"
                   required
-                  class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
+                  class="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm"
                 />
               </div>
             </div>

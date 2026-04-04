@@ -70,6 +70,11 @@ export interface UploadPluginResponse {
 export interface UpdatePluginRequest {
   name?: string;
   description?: string;
+  tags?: string[];
+}
+
+export interface UpdatePluginVersionRequest {
+  status?: PluginStatus;
 }
 
 export interface PaginatedResponse<T> {
