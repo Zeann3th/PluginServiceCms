@@ -10,8 +10,7 @@ import type {
 } from '@/types'
 
 const { user, token, logout, fetchProfile, isAuthenticated } = useAuth()
-const config = useRuntimeConfig()
-const apiBase = `${config.public.apiBase}/api/v1/plugins`
+const $api = useApi()
 
 // ── State ──────────────────────────────────────────────────────────────────
 const plugins = ref<Plugin[]>([])
@@ -37,7 +36,8 @@ const isDialogOpen = computed({
 // Active plugin being operated on (upload retry / edit)
 const activePluginId = ref<number | null>(null)
 
-const createForm = ref<CreatePluginRequest>({ code: '', name: '', version: '1.0.0', description: '' })
+const createForm = ref<CreatePluginRequest>({ code: '', name: '', version: '1.0.0', description: '', tags: [] })
+const tagInput = ref('')
 const editForm = ref({ name: '', description: '' })
 const selectedFile = ref<File | null>(null)
 const fileError = ref('')
@@ -51,7 +51,20 @@ const formatDate = (dateStr: string) =>
 const isOwnerOrAdmin = (plugin: Plugin) =>
   isAuthenticated.value && (user.value?.id === plugin.publisher.id || user.value?.role === 'Admin')
 
-const isDraft = (plugin: Plugin) => plugin.status === 'DRAFT'
+const isDraft = (plugin: Plugin) => !plugin.latestVersion
+
+const addTag = () => {
+  if (!tagInput.value) return
+  if (!createForm.value.tags) createForm.value.tags = []
+  if (!createForm.value.tags.includes(tagInput.value)) {
+    createForm.value.tags.push(tagInput.value)
+  }
+  tagInput.value = ''
+}
+
+const removeTag = (tag: string) => {
+  createForm.value.tags = createForm.value.tags?.filter(t => t !== tag)
+}
 
 // ── Data fetching ──────────────────────────────────────────────────────────
 const fetchPlugins = async () => {
@@ -60,19 +73,19 @@ const fetchPlugins = async () => {
     const params: Record<string, any> = { page: page.value, per_page: 20 }
     if (searchQuery.value) params.name = searchQuery.value
 
-    const response = await $fetch<ApiResponse<PaginatedResponse<PluginResponse>>>(apiBase, { params })
+    const response = await $api<ApiResponse<PaginatedResponse<PluginResponse>>>('/api/v1/plugins', { params })
     if (response?.data) {
       plugins.value = response.data.items.map(p => ({
         id: p.id,
         code: p.code,
         name: p.name,
         description: p.description,
-        version: p.version,
         publisher: p.publisher,
-        status: p.status,
-        downloadCount: p.download_count,
         upvoteCount: p.upvote_count,
         downvoteCount: p.downvote_count,
+        tags: p.tags,
+        latestVersion: p.latest_version,
+        installationStatus: p.installation_status,
         createdAt: p.created_at,
         updatedAt: p.updated_at
       }))
@@ -88,7 +101,8 @@ const fetchPlugins = async () => {
 // ── Create flow ────────────────────────────────────────────────────────────
 const openCreateDialog = () => {
   if (!isAuthenticated.value) { navigateTo('/login'); return }
-  createForm.value = { code: '', name: '', version: '1.0.0', description: '' }
+  createForm.value = { code: '', name: '', version: '1.0.0', description: '', tags: [] }
+  tagInput.value = ''
   submitError.value = ''
   dialogMode.value = 'create'
 }
@@ -97,10 +111,9 @@ const submitCreate = async () => {
   submitError.value = ''
   submitting.value = true
   try {
-    const res = await $fetch<ApiResponse<CreatePluginResponse>>(apiBase, {
+    const res = await $api<ApiResponse<CreatePluginResponse>>('/api/v1/plugins', {
       method: 'POST',
-      body: createForm.value,
-      headers: { Authorization: `Bearer ${token.value}` }
+      body: createForm.value
     })
     if (!res.data) throw new Error('No response data')
     activePluginId.value = res.data.plugin_id
@@ -148,9 +161,9 @@ const submitUpload = async () => {
       file_size: selectedFile.value.size
     }
     // 1. Get presigned URL
-    const urlRes = await $fetch<ApiResponse<UploadPluginResponse>>(
-      `${apiBase}/${activePluginId.value}/upload`,
-      { method: 'POST', body: uploadReq, headers: { Authorization: `Bearer ${token.value}` } }
+    const urlRes = await $api<ApiResponse<UploadPluginResponse>>(
+      `/api/v1/plugins/${activePluginId.value}/upload`,
+      { method: 'POST', body: uploadReq }
     )
     if (!urlRes.data?.upload_url) throw new Error('No upload URL received')
 
@@ -163,9 +176,8 @@ const submitUpload = async () => {
     if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`)
 
     // 3. Publish
-    await $fetch(`${apiBase}/${activePluginId.value}/publish`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token.value}` }
+    await $api(`/api/v1/plugins/${activePluginId.value}/publish`, {
+      method: 'POST'
     })
 
     dialogMode.value = null
@@ -190,10 +202,9 @@ const submitEdit = async () => {
   submitError.value = ''
   submitting.value = true
   try {
-    await $fetch(`${apiBase}/${activePluginId.value}`, {
+    await $api(`/api/v1/plugins/${activePluginId.value}`, {
       method: 'PATCH',
-      body: { name: editForm.value.name, description: editForm.value.description },
-      headers: { Authorization: `Bearer ${token.value}` }
+      body: { name: editForm.value.name, description: editForm.value.description }
     })
     dialogMode.value = null
     await fetchPlugins()
@@ -208,9 +219,8 @@ const submitEdit = async () => {
 const deletePlugin = async (id: number) => {
   if (!confirm('Delete this plugin? This cannot be undone.')) return
   try {
-    await $fetch(`${apiBase}/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token.value}` }
+    await $api(`/api/v1/plugins/${id}`, {
+      method: 'DELETE'
     })
     await fetchPlugins()
   } catch (e) {
@@ -222,10 +232,9 @@ const deletePlugin = async (id: number) => {
 const votePlugin = async (id: number, isUpvote: boolean) => {
   if (!isAuthenticated.value) { navigateTo('/login'); return }
   try {
-    await $fetch(`${apiBase}/${id}/vote`, {
+    await $api(`/api/v1/plugins/${id}/vote`, {
       method: 'POST',
-      body: { is_upvote: isUpvote },
-      headers: { Authorization: `Bearer ${token.value}` }
+      body: { is_upvote: isUpvote }
     })
     await fetchPlugins()
   } catch (e) {
@@ -236,7 +245,7 @@ const votePlugin = async (id: number, isUpvote: boolean) => {
 // ── Download (PUBLISHED only) ──────────────────────────────────────────────
 const downloadPlugin = async (plugin: Plugin) => {
   try {
-    const response = await $fetch<ApiResponse<string>>(`${apiBase}/${plugin.id}/download`)
+    const response = await $api<ApiResponse<string>>(`/api/v1/plugins/${plugin.id}/download`)
     if (response?.data) {
       window.open(response.data, '_blank')
       setTimeout(fetchPlugins, 1000)
@@ -412,15 +421,32 @@ onMounted(async () => {
             <div class="space-y-1">
               <div class="flex items-center gap-2">
                 <h3 class="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">{{ plugin.name }}</h3>
-                <span class="text-[9px] font-black bg-white/5 px-1.5 py-0.5 rounded text-slate-500 uppercase">v{{ plugin.version }}</span>
+                <span v-if="plugin.latestVersion" class="text-[9px] font-black bg-white/5 px-1.5 py-0.5 rounded text-slate-500 uppercase">v{{ plugin.latestVersion }}</span>
               </div>
               <p class="text-xs text-slate-500 font-medium tracking-tight line-clamp-2 h-8">
                 {{ plugin.description || 'No description provided for this extension.' }}
               </p>
+              
+              <!-- Tags -->
+              <div v-if="plugin.tags && plugin.tags.length > 0" class="flex flex-wrap gap-1 mt-2">
+                <span v-for="tag in plugin.tags" :key="tag" class="px-1.5 py-0.5 rounded bg-emerald-500/5 border border-emerald-500/10 text-[9px] font-bold text-emerald-500/70 uppercase tracking-tighter">
+                  #{{ tag }}
+                </span>
+              </div>
             </div>
           </CardHeader>
 
           <CardContent class="px-6 pb-4 flex-1 flex flex-col justify-end">
+            <!-- Installation Status -->
+            <div v-if="isAuthenticated" class="mb-3">
+              <div v-if="plugin.installationStatus === 'INSTALLED'" class="flex items-center gap-1.5 text-emerald-400 font-bold text-[10px] uppercase tracking-widest">
+                <CheckCircle2 class="w-3.5 h-3.5" /> Installed
+              </div>
+              <div v-else-if="plugin.installationStatus === 'UPDATABLE'" class="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] uppercase tracking-widest">
+                <Zap class="w-3.5 h-3.5 animate-pulse" /> Update Available
+              </div>
+            </div>
+
             <div class="flex items-center gap-3 pt-3 border-t border-white/5">
               <div class="flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
                 <Download class="w-3 h-3 text-emerald-500" />
@@ -525,6 +551,19 @@ onMounted(async () => {
               <div class="space-y-2">
                 <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Title</Label>
                 <Input v-model="createForm.name" placeholder="My Awesome Plugin" class="bg-white/5 border-white/10 rounded-xl h-11 text-sm" />
+              </div>
+              <div class="space-y-2">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Tags</Label>
+                <div class="flex gap-2">
+                  <Input v-model="tagInput" placeholder="Add a tag..." class="bg-white/5 border-white/10 rounded-xl h-11 text-sm" @keyup.enter="addTag" />
+                  <Button @click="addTag" variant="outline" class="h-11 rounded-xl border-white/10 text-white font-bold px-4">Add</Button>
+                </div>
+                <div v-if="createForm.tags && createForm.tags.length > 0" class="flex flex-wrap gap-2 mt-2">
+                  <span v-for="tag in createForm.tags" :key="tag" class="px-2 py-1 rounded bg-emerald-500/20 text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                    {{ tag }}
+                    <button @click="removeTag(tag)" class="hover:text-white">&times;</button>
+                  </span>
+                </div>
               </div>
               <div class="space-y-2">
                 <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Description</Label>

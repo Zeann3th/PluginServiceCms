@@ -61,12 +61,9 @@ export const useAuth = () => {
 
   const fetchProfile = async () => {
     if (!token.value) return null
+    const $api = useApi()
     try {
-      const response = await $fetch<ApiResponse<User>>(`${apiBase}/profile`, {
-        headers: {
-          Authorization: `Bearer ${token.value}`
-        }
-      })
+      const response = await $api<ApiResponse<User>>('/api/v1/users/profile')
       if (response && response.data) {
         user.value = response.data
         return user.value

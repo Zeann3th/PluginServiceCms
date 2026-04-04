@@ -4,18 +4,27 @@ export interface UserInfo {
 }
 
 export type PluginStatus = 'DRAFT' | 'PUBLISHED';
+export type InstallationStatus = 'NOT_INSTALLED' | 'INSTALLED' | 'UPDATABLE';
+
+export interface PluginVersionResponse {
+  version: string;
+  status: PluginStatus;
+  download_count: number;
+  created_at: string;
+}
 
 export interface Plugin {
   id: number;
   code: string;
   name: string;
   description: string | null;
-  version: string;
   publisher: UserInfo;
-  status: PluginStatus;
-  downloadCount: number;
   upvoteCount: number;
   downvoteCount: number;
+  tags: string[];
+  latestVersion: string | null;
+  installationStatus: InstallationStatus;
+  versions?: PluginVersionResponse[];
   createdAt: string;
   updatedAt: string;
 }
@@ -25,12 +34,13 @@ export interface PluginResponse {
   code: string;
   name: string;
   description: string | null;
-  version: string;
   publisher: UserInfo;
-  status: PluginStatus;
-  download_count: number;
   upvote_count: number;
   downvote_count: number;
+  tags: string[];
+  latest_version: string | null;
+  installation_status: InstallationStatus;
+  versions?: PluginVersionResponse[];
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +50,7 @@ export interface CreatePluginRequest {
   name: string;
   description?: string;
   version: string;
+  tags?: string[];
 }
 
 export interface CreatePluginResponse {
@@ -49,6 +60,7 @@ export interface CreatePluginResponse {
 export interface UploadPluginRequest {
   filename: string;
   file_size: number;
+  version?: string;
 }
 
 export interface UploadPluginResponse {
