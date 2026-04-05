@@ -3,7 +3,7 @@ import {
   Plus, Search, Pencil, Trash2, Loader2, UploadCloud,
   ArrowUp, ArrowDown, Download, LogOut,
   Database, Info, ShoppingBag, Zap, Sparkles, AlertCircle, CheckCircle2,
-  Sun, Moon
+  Sun, Moon, ChevronRight, History, Box, LayoutGrid, List
 } from 'lucide-vue-next'
 import type {
   Plugin, PluginResponse, CreatePluginRequest, UploadPluginRequest,
@@ -39,7 +39,6 @@ const isDialogOpen = computed({
   set: (v) => { if (!v) dialogMode.value = null }
 })
 
-// Active plugin being operated on (upload retry / edit)
 const activePluginId = ref<number | null>(null)
 const activePlugin = ref<Plugin | null>(null)
 
@@ -58,8 +57,6 @@ const formatDate = (dateStr: string) =>
 
 const isOwnerOrAdmin = (plugin: Plugin) =>
   isAuthenticated.value && (user.value?.id === plugin.publisher.id || user.value?.role === 'Admin')
-
-const isDraft = (plugin: Plugin) => !plugin.latestVersion
 
 const addTag = () => {
   if (!tagInput.value) return
@@ -100,6 +97,7 @@ const fetchPlugins = async () => {
         code: p.code,
         name: p.name,
         description: p.description,
+        status: p.status,
         publisher: p.publisher,
         upvoteCount: p.upvote_count,
         downvoteCount: p.downvote_count,
@@ -115,16 +113,6 @@ const fetchPlugins = async () => {
     console.error('Failed to fetch plugins:', e)
   } finally {
     loading.value = false
-  }
-}
-
-const fetchPluginById = async (id: number) => {
-  try {
-    const response = await $api<ApiResponse<PluginResponse>>(`/api/v1/plugins/${id}`)
-    return response.data
-  } catch (e) {
-    console.error('Failed to fetch plugin:', e)
-    return null
   }
 }
 
@@ -147,9 +135,9 @@ const submitCreate = async () => {
     })
     if (!res.data) throw new Error('No response data')
     activePluginId.value = res.data.plugin_id
+    activePlugin.value = { id: res.data.plugin_id, latestVersion: createForm.value.version } as any
     selectedFile.value = null
     fileError.value = ''
-    // Advance to upload step in same dialog session
     dialogMode.value = 'upload'
     await fetchPlugins()
   } catch (e: any) {
@@ -157,15 +145,6 @@ const submitCreate = async () => {
   } finally {
     submitting.value = false
   }
-}
-
-// ── Upload flow ────────────────────────────────────────────────────────────
-const openUploadDialog = (plugin: Plugin) => {
-  activePluginId.value = plugin.id
-  selectedFile.value = null
-  fileError.value = ''
-  submitError.value = ''
-  dialogMode.value = 'upload'
 }
 
 const handleFileChange = (event: Event) => {
@@ -182,22 +161,21 @@ const handleFileChange = (event: Event) => {
 }
 
 const submitUpload = async () => {
-  if (!selectedFile.value || !activePluginId.value) return
+  if (!selectedFile.value || !activePluginId.value || !activePlugin.value) return
   submitError.value = ''
   submitting.value = true
   try {
+    const version = activePlugin.value.latestVersion || createForm.value.version
     const uploadReq: UploadPluginRequest = {
       filename: selectedFile.value.name,
       file_size: selectedFile.value.size
     }
-    // 1. Get presigned URL
     const urlRes = await $api<ApiResponse<UploadPluginResponse>>(
-      `/api/v1/plugins/${activePluginId.value}/upload`,
+      `/api/v1/plugins/${activePluginId.value}/versions/${version}/upload`,
       { method: 'POST', body: uploadReq }
     )
     if (!urlRes.data?.upload_url) throw new Error('No upload URL received')
 
-    // 2. PUT file directly to S3
     const s3Res = await fetch(urlRes.data.upload_url, {
       method: 'PUT',
       body: selectedFile.value,
@@ -205,8 +183,7 @@ const submitUpload = async () => {
     })
     if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`)
 
-    // 3. Publish
-    await $api(`/api/v1/plugins/${activePluginId.value}/publish`, {
+    await $api(`/api/v1/plugins/${activePluginId.value}/versions/${version}/publish`, {
       method: 'POST'
     })
 
@@ -219,7 +196,6 @@ const submitUpload = async () => {
   }
 }
 
-// ── Edit flow ──────────────────────────────────────────────────────────────
 const openEditDialog = (plugin: Plugin) => {
   activePluginId.value = plugin.id
   editForm.value = { 
@@ -254,66 +230,6 @@ const submitEdit = async () => {
   }
 }
 
-// ── Version management ──────────────────────────────────────────────────────
-const openVersionsDialog = async (plugin: Plugin) => {
-  activePluginId.value = plugin.id
-  submitting.value = true
-  try {
-    const data = await fetchPluginById(plugin.id)
-    if (data) {
-      activePlugin.value = {
-        ...plugin,
-        versions: data.versions
-      }
-      dialogMode.value = 'versions'
-    }
-  } catch (e) {
-    console.error('Failed to fetch versions:', e)
-  } finally {
-    submitting.value = false
-  }
-}
-
-const deleteVersion = async (version: string) => {
-  if (!activePluginId.value || !confirm(`Delete version ${version}? This cannot be undone.`)) return
-  try {
-    await $api(`/api/v1/plugins/${activePluginId.value}/versions/${version}`, {
-      method: 'DELETE'
-    })
-    // Refresh versions
-    if (activePluginId.value) {
-      const data = await fetchPluginById(activePluginId.value)
-      if (data && activePlugin.value) {
-        activePlugin.value.versions = data.versions
-      }
-    }
-    await fetchPlugins()
-  } catch (e) {
-    console.error('Delete version failed:', e)
-  }
-}
-
-const updateVersionStatus = async (version: string, status: 'DRAFT' | 'PUBLISHED') => {
-  if (!activePluginId.value) return
-  try {
-    await $api(`/api/v1/plugins/${activePluginId.value}/versions/${version}`, {
-      method: 'PATCH',
-      body: { status }
-    })
-    // Refresh versions
-    if (activePluginId.value) {
-      const data = await fetchPluginById(activePluginId.value)
-      if (data && activePlugin.value) {
-        activePlugin.value.versions = data.versions
-      }
-    }
-    await fetchPlugins()
-  } catch (e) {
-    console.error('Update version failed:', e)
-  }
-}
-
-// ── Delete ─────────────────────────────────────────────────────────────────
 const deletePlugin = async (id: number) => {
   if (!confirm('Delete this plugin? This cannot be undone.')) return
   try {
@@ -326,33 +242,6 @@ const deletePlugin = async (id: number) => {
   }
 }
 
-// ── Vote ───────────────────────────────────────────────────────────────────
-const votePlugin = async (id: number, isUpvote: boolean) => {
-  if (!isAuthenticated.value) { navigateTo('/login'); return }
-  try {
-    await $api(`/api/v1/plugins/${id}/vote`, {
-      method: 'POST',
-      body: { is_upvote: isUpvote }
-    })
-    await fetchPlugins()
-  } catch (e) {
-    console.error('Vote failed:', e)
-  }
-}
-
-// ── Download (PUBLISHED only) ──────────────────────────────────────────────
-const downloadPlugin = async (plugin: Plugin) => {
-  try {
-    const response = await $api<ApiResponse<string>>(`/api/v1/plugins/${plugin.id}/download`)
-    if (response?.data) {
-      window.open(response.data, '_blank')
-      setTimeout(fetchPlugins, 1000)
-    }
-  } catch (e) {
-    console.error('Download failed:', e)
-  }
-}
-
 onMounted(async () => {
   if (token.value) await fetchProfile()
   fetchPlugins()
@@ -360,494 +249,360 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground font-sans flex flex-col overflow-x-hidden transition-colors duration-300">
+  <div class="min-h-screen bg-background text-foreground font-sans flex flex-col selection:bg-primary/30 selection:text-primary-foreground">
     <!-- Background blobs -->
     <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-[120px] animate-pulse-slow"></div>
-      <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-[120px] animate-pulse-slow" style="animation-delay: 2s"></div>
+      <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 dark:bg-primary/5 rounded-full blur-[120px] animate-pulse-slow"></div>
+      <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/10 dark:bg-primary/5 rounded-full blur-[120px] animate-pulse-slow" style="animation-delay: 2s"></div>
     </div>
 
-    <!-- Header -->
-    <header class="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-50 transition-colors">
-      <div class="container mx-auto h-full flex items-center justify-between px-6">
+    <!-- Header Island -->
+    <div class="sticky top-4 z-50 w-full px-6">
+      <header class="container mx-auto h-16 border border-border bg-surface/80 backdrop-blur-xl rounded-2xl shadow-island flex items-center justify-between px-6 transition-all duration-300">
         <div class="flex items-center gap-8">
           <NuxtLink to="/" class="flex items-center gap-3 group">
-            <div class="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform duration-300">
-              <ShoppingBag class="w-5 h-5 text-black" />
+            <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-glow group-hover:rotate-12 transition-transform duration-500">
+              <Database class="w-6 h-6 text-primary-foreground" />
             </div>
-            <div class="flex flex-col">
-              <span class="font-bold text-lg tracking-tight text-foreground leading-none">StressPilot</span>
-              <span class="text-[9px] font-bold text-emerald-500/70 uppercase tracking-[0.2em]">Marketplace</span>
-            </div>
+            <h1 class="text-xl font-black text-foreground tracking-tight uppercase">STRESS<span class="text-primary">PILOT</span></h1>
           </NuxtLink>
-          <nav class="hidden md:flex items-center gap-1">
-            <button class="px-3 py-1.5 rounded-lg text-sm font-bold text-foreground bg-primary/10">Discover</button>
-            <button class="px-3 py-1.5 rounded-lg text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">Categories</button>
-            <a 
-              href="https://docs.stresspilot.zeann3th.com" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              class="px-3 py-1.5 rounded-lg text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Docs
-            </a>
-          </nav>
         </div>
 
         <div class="flex items-center gap-4">
           <button
             @click="toggleTheme"
-            class="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all text-slate-400 hover:text-white"
+            class="w-10 h-10 rounded-xl border border-border flex items-center justify-center hover:bg-elevated transition-all text-secondary hover:text-foreground shadow-sm"
             title="Toggle Theme"
           >
             <Sun v-if="colorMode.value === 'dark'" class="w-4 h-4" />
             <Moon v-else class="w-4 h-4" />
           </button>
+
           <div v-if="isAuthenticated && user" class="flex items-center gap-4">
-            <Button @click="openCreateDialog" variant="ghost" class="hidden sm:flex text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 font-bold rounded-lg h-9">
-              <Plus class="w-4 h-4 mr-2" /> Release Plugin
-            </Button>
-            <div class="h-6 w-[1px] bg-white/10 hidden sm:block"></div>
-            <div class="flex items-center gap-3 pl-2">
-              <div class="hidden sm:flex flex-col items-end">
-                <span class="text-xs font-bold text-white">{{ user.username }}</span>
-                <span class="text-[9px] text-slate-500 font-medium">{{ user.role }}</span>
+            <button @click="openCreateDialog" class="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black uppercase tracking-widest transition-all rounded-xl shadow-glow">
+              <Plus class="w-4 h-4" /> Release Plugin
+            </button>
+            <div class="h-6 w-px bg-border"></div>
+            <div class="flex items-center gap-3">
+              <div class="hidden sm:flex flex-col items-end leading-none">
+                <span class="text-[11px] font-black text-foreground uppercase tracking-tight">{{ user.username }}</span>
+                <span class="text-[9px] text-secondary font-bold uppercase tracking-widest mt-1">{{ user.role }}</span>
               </div>
-              <button @click="logout" class="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-rose-500/10 hover:border-rose-500/20 transition-all group">
-                <LogOut class="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-400" />
+              <button @click="logout" class="w-10 h-10 rounded-xl border border-border flex items-center justify-center hover:bg-destructive/10 hover:border-destructive/20 transition-all group">
+                <LogOut class="w-4 h-4 text-secondary group-hover:text-destructive" />
               </button>
             </div>
           </div>
           <div v-else class="flex items-center gap-2">
             <NuxtLink to="/login">
-              <Button variant="ghost" class="text-xs font-bold text-slate-400 hover:text-white rounded-lg h-9">Sign In</Button>
+              <button class="text-xs font-black uppercase tracking-widest text-secondary hover:text-foreground px-4 py-2.5 transition-colors">Sign In</button>
             </NuxtLink>
             <NuxtLink to="/signup">
-              <Button class="bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg px-4 h-9 shadow-lg shadow-emerald-500/20 text-xs">Get Started</Button>
+              <button class="bg-foreground text-background dark:bg-white dark:text-black text-xs font-black uppercase tracking-widest px-6 py-2.5 transition-all rounded-xl shadow-island">Sign Up</button>
             </NuxtLink>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </div>
 
-    <!-- Hero / Search -->
-    <section class="relative pt-12 pb-10 px-6 overflow-hidden">
+    <!-- Hero Section -->
+    <section class="relative pt-24 pb-12 px-6 overflow-hidden">
       <div class="container mx-auto text-center relative z-10">
-        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[9px] font-bold uppercase tracking-widest mb-4">
-          <Sparkles class="w-3 h-3" /> Discover the best extensions
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-6">
+          <Sparkles class="w-3.5 h-3.5" /> Discover the best extensions
         </div>
-        <h1 class="text-4xl md:text-5xl font-black text-foreground mb-4 tracking-tight">
-          Supercharge your <span class="text-emerald-500">StressPilot</span>
+        <h1 class="text-5xl md:text-7xl font-black text-foreground mb-6 tracking-[-0.05em] leading-none uppercase">
+          Supercharge your <span class="text-primary italic">StressPilot</span>
         </h1>
-        <p class="text-base text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
+        <p class="text-secondary font-medium text-sm md:text-base max-w-2xl mx-auto mb-12 leading-relaxed">
           The official marketplace for StressPilot plugins. Search, download, and integrate community-built extensions in seconds.
         </p>
-        <div class="max-w-2xl mx-auto relative group">
-          <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 rounded-xl blur opacity-25 group-focus-within:opacity-100 transition duration-1000"></div>
-          <div class="relative flex flex-col sm:flex-row gap-2">
+        
+        <div class="max-w-3xl mx-auto relative group">
+          <div class="absolute -inset-1 bg-primary/20 rounded-3xl blur opacity-25 group-focus-within:opacity-100 transition duration-1000"></div>
+          <div class="relative flex bg-surface border border-border p-2 focus-within:border-primary/50 transition-all shadow-island rounded-2xl">
             <div class="relative flex-1">
-              <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-emerald-500 transition-colors" />
+              <Search class="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 v-model="searchQuery"
-                placeholder="Search by name..."
-                class="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all shadow-xl"
+                placeholder="Search by name, code or identifier..."
+                class="w-full bg-transparent border-none pl-14 pr-4 py-4 text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
               />
             </div>
-            <Button @click="fetchPlugins" class="h-12 px-6 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-xl shadow-xl shadow-emerald-500/20 shrink-0 text-sm">
-              Search
-            </Button>
+            <button @click="fetchPlugins" class="px-10 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-sm uppercase tracking-widest transition-all rounded-xl shadow-glow">
+              SEARCH
+            </button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Main content -->
-    <main class="flex-1 container mx-auto px-6 pb-20 z-10">
-      <div class="flex items-center justify-between mb-6 border-b border-border pb-4">
-        <div class="flex items-center gap-4">
-          <button class="text-xs font-bold text-foreground border-b-2 border-emerald-500 pb-1">All Plugins</button>
-        </div>
-        <div class="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-          <Database class="w-3.5 h-3.5" />
-          {{ totalItems }} Plugins found
-        </div>
-      </div>
-
-      <!-- Loading -->
-      <div v-if="loading && plugins.length === 0" class="flex flex-col items-center justify-center py-24 opacity-50">
-        <Loader2 class="h-10 w-10 animate-spin text-emerald-500 mb-3" />
-        <p class="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">Fetching Extensions...</p>
-      </div>
-
-      <!-- Grid -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <Card
-          v-for="plugin in plugins"
-          :key="plugin.id"
-          class="group bg-card border-border hover:border-emerald-500/30 transition-all duration-500 rounded-2xl overflow-hidden flex flex-col h-full"
-          :class="{ 'opacity-70': isDraft(plugin) }"
-        >
-          <CardHeader class="p-6 pb-3">
-            <div class="flex justify-between items-start mb-4">
-              <div class="flex items-center gap-2">
-                <div class="w-11 h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-black transition-all duration-500 group-hover:scale-105">
-                  <Zap v-if="plugin.downloadCount > 10" class="w-5 h-5" />
-                  <ShoppingBag v-else class="w-5 h-5" />
-                </div>
-                <!-- Status badge -->
-                <span
-                  v-if="isDraft(plugin)"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-400"
-                >
-                  <AlertCircle class="w-2.5 h-2.5" /> Draft
-                </span>
-                <span
-                  v-else
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-                >
-                  <CheckCircle2 class="w-2.5 h-2.5" /> Live
-                </span>
-              </div>
-
-              <!-- Owner actions -->
-              <div v-if="isOwnerOrAdmin(plugin)" class="flex gap-1">
-                <!-- Re-upload button for DRAFT -->
-                <Button
-                  v-if="isDraft(plugin)"
-                  size="icon"
-                  variant="ghost"
-                  class="h-7 w-7 rounded-full hover:bg-amber-500/10 hover:text-amber-400"
-                  title="Upload file"
-                  @click="openUploadDialog(plugin)"
-                >
-                  <UploadCloud class="h-3 w-3" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  class="h-7 w-7 rounded-full hover:bg-secondary/80"
-                  title="Manage Versions"
-                  @click="openVersionsDialog(plugin)"
-                >
-                  <Database class="h-3 w-3" />
-                </Button>
-                <Button size="icon" variant="ghost" class="h-7 w-7 rounded-full hover:bg-secondary/80" @click="openEditDialog(plugin)">
-                  <Pencil class="h-3 w-3" />
-                </Button>
-                <Button size="icon" variant="ghost" class="h-7 w-7 rounded-full hover:bg-rose-500/10 hover:text-rose-400" @click="deletePlugin(plugin.id)">
-                  <Trash2 class="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <h3 class="text-lg font-bold text-foreground group-hover:text-emerald-400 transition-colors">{{ plugin.name }}</h3>
-                <span v-if="plugin.latestVersion" class="text-[9px] font-black bg-secondary px-1.5 py-0.5 rounded text-muted-foreground uppercase">v{{ plugin.latestVersion }}</span>
-              </div>
-              <p class="text-xs text-muted-foreground font-medium tracking-tight line-clamp-2 h-8">
-                {{ plugin.description || 'No description provided for this extension.' }}
-              </p>
-              
-              <!-- Tags -->
-              <div v-if="plugin.tags && plugin.tags.length > 0" class="flex flex-wrap gap-1 mt-2">
-                <span v-for="tag in plugin.tags" :key="tag" class="px-1.5 py-0.5 rounded bg-emerald-500/5 border border-emerald-500/10 text-[9px] font-bold text-emerald-500/70 uppercase tracking-tighter">
-                  #{{ tag }}
-                </span>
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent class="px-6 pb-4 flex-1 flex flex-col justify-end">
-            <!-- Installation Status -->
-            <div v-if="isAuthenticated" class="mb-3">
-              <div v-if="plugin.installationStatus === 'INSTALLED'" class="flex items-center gap-1.5 text-emerald-400 font-bold text-[10px] uppercase tracking-widest">
-                <CheckCircle2 class="w-3.5 h-3.5" /> Installed
-              </div>
-              <div v-else-if="plugin.installationStatus === 'UPDATABLE'" class="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] uppercase tracking-widest">
-                <Zap class="w-3.5 h-3.5 animate-pulse" /> Update Available
-              </div>
-            </div>
-
-            <div class="flex items-center gap-3 pt-3 border-t border-border">
-              <div class="flex items-center gap-1 bg-secondary px-2.5 py-1 rounded-lg border border-border">
-                <Download class="w-3 h-3 text-emerald-500" />
-                <span class="text-[10px] font-bold text-foreground">{{ plugin.downloadCount }}</span>
-              </div>
-              <div class="flex items-center gap-3 ml-auto">
-                <button @click="votePlugin(plugin.id, true)" class="flex items-center gap-1 hover:text-emerald-400 transition-colors text-muted-foreground group/vote">
-                  <ArrowUp class="w-3.5 h-3.5 group-hover/vote:-translate-y-0.5 transition-transform" />
-                  <span class="text-[10px] font-bold">{{ plugin.upvoteCount }}</span>
-                </button>
-                <button @click="votePlugin(plugin.id, false)" class="flex items-center gap-1 hover:text-rose-400 transition-colors text-muted-foreground group/down">
-                  <ArrowDown class="w-3.5 h-3.5 group-hover/down:translate-y-0.5 transition-transform" />
-                  <span class="text-[10px] font-bold">{{ plugin.downvoteCount }}</span>
-                </button>
-              </div>
-            </div>
-          </CardContent>
-
-          <CardFooter class="bg-secondary/20 px-6 py-4 flex items-center justify-between border-t border-border">
-            <div class="flex items-center gap-2">
-              <div class="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[9px] font-bold text-emerald-500">
-                {{ plugin.publisher.username.substring(0, 1).toUpperCase() }}
-              </div>
-              <span class="text-[10px] font-bold text-muted-foreground">{{ plugin.publisher.username }}</span>
-            </div>
-
-            <!-- Download only available for PUBLISHED -->
-            <Button
-              v-if="!isDraft(plugin)"
-              @click="downloadPlugin(plugin)"
-              class="bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-black font-black text-[10px] h-8 rounded-lg px-3 border border-emerald-500/20 hover:border-emerald-500 transition-all duration-300"
-            >
-              DOWNLOAD
-            </Button>
-            <span
-              v-else
-              class="text-[10px] font-bold text-amber-500/60 uppercase tracking-widest"
-            >
-              Not ready
-            </span>
-          </CardFooter>
-        </Card>
-
-        <!-- Empty state -->
-        <div v-if="plugins.length === 0 && !loading" class="col-span-full py-24 text-center">
-          <div class="w-16 h-16 bg-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Info class="w-8 h-8 text-muted-foreground" />
+    <!-- Main Content Island -->
+    <main class="flex-1 container mx-auto px-6 pb-24 z-10">
+      <div class="bg-surface/40 backdrop-blur-sm border border-border rounded-[2.5rem] p-8 md:p-12 shadow-island">
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
+          <div class="flex items-center gap-6">
+            <button class="text-xs font-black text-foreground uppercase tracking-widest border-b-2 border-primary pb-2">All Extensions</button>
+            <button class="text-xs font-black text-secondary hover:text-foreground uppercase tracking-widest pb-2 transition-colors">Trending</button>
+            <button class="text-xs font-black text-secondary hover:text-foreground uppercase tracking-widest pb-2 transition-colors">Newest</button>
           </div>
-          <h3 class="text-xl font-bold text-foreground mb-1">No plugins found</h3>
-          <p class="text-sm text-muted-foreground mb-6">Try adjusting your search or be the first to release one.</p>
-          <Button @click="searchQuery = ''; fetchPlugins()" variant="outline" class="rounded-xl border-border text-foreground font-bold h-10 px-6">
-            Clear Filters
-          </Button>
+          <div class="flex items-center gap-3 px-4 py-2 bg-elevated/50 border border-border rounded-full text-[10px] font-black text-secondary uppercase tracking-widest">
+            <span class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+            {{ totalItems }} Extensions Available
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="loading && plugins.length === 0" class="flex flex-col items-center justify-center py-32">
+          <Loader2 class="h-12 w-12 animate-spin text-primary mb-6" />
+          <p class="text-xs font-black text-secondary tracking-[0.4em] uppercase">Synchronizing Index...</p>
+        </div>
+
+        <!-- Grid -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div
+            v-for="plugin in plugins"
+            :key="plugin.id"
+            class="group bg-surface border border-border hover:border-primary/40 transition-all duration-500 flex flex-col cursor-pointer relative overflow-hidden rounded-3xl shadow-sm hover:shadow-island-hover hover:-translate-y-1"
+            @click="navigateTo(`/plugins/${plugin.id}`)"
+          >
+            <!-- Status Ribbon for owner -->
+            <div v-if="plugin.status === 'DRAFTED'" class="absolute top-0 right-0 px-4 py-1.5 bg-amber-500 text-black text-[9px] font-black uppercase tracking-[0.2em] z-20 rounded-bl-2xl shadow-xl">
+              Draft
+            </div>
+
+            <div class="p-8 flex-1 space-y-6">
+              <div class="flex items-start justify-between">
+                <div class="w-14 h-14 bg-elevated border border-border flex items-center justify-center group-hover:border-primary/50 transition-all duration-500 rounded-2xl shadow-inner group-hover:scale-110 group-hover:rotate-3">
+                  <Box class="w-7 h-7 text-secondary group-hover:text-primary transition-colors" />
+                </div>
+                <div class="flex items-center gap-1" @click.stop>
+                  <button
+                    v-if="isOwnerOrAdmin(plugin)"
+                    @click="openEditDialog(plugin)"
+                    class="p-2.5 text-secondary hover:text-foreground hover:bg-elevated transition-all rounded-xl"
+                  >
+                    <Pencil class="w-4 h-4" />
+                  </button>
+                  <button
+                    v-if="isOwnerOrAdmin(plugin)"
+                    @click="deletePlugin(plugin.id)"
+                    class="p-2.5 text-secondary hover:text-destructive hover:bg-destructive/10 transition-all rounded-xl"
+                  >
+                    <Trash2 class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors">{{ plugin.name }}</h3>
+                  <span v-if="plugin.latestVersion" class="text-[10px] font-black bg-elevated px-2 py-0.5 rounded-lg text-secondary border border-border uppercase">v{{ plugin.latestVersion }}</span>
+                </div>
+                <p class="text-[11px] font-mono text-primary/70 uppercase tracking-widest font-bold">{{ plugin.code }}</p>
+              </div>
+
+              <p v-if="plugin.description" class="text-sm text-secondary line-clamp-2 leading-relaxed font-medium">
+                {{ plugin.description }}
+              </p>
+
+              <div class="flex flex-wrap gap-2 pt-2">
+                <span v-for="tag in plugin.tags" :key="tag" class="px-3 py-1 bg-elevated/50 border border-border text-[9px] font-black text-secondary uppercase tracking-[0.15em] group-hover:border-primary/20 transition-colors rounded-lg">
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+
+            <div class="px-8 py-5 bg-elevated/30 border-t border-border flex items-center justify-between transition-colors group-hover:bg-elevated/50">
+              <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2 text-xs font-black text-secondary">
+                  <ArrowUp class="w-4 h-4 text-primary/60 group-hover:text-primary transition-colors" />
+                  {{ plugin.upvoteCount }}
+                </div>
+                <div class="flex items-center gap-2 text-xs font-black text-secondary">
+                  <Download class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  {{ plugin.latestVersion ? 'Stable' : 'Untagged' }}
+                </div>
+              </div>
+              <div class="w-8 h-8 rounded-full border border-border flex items-center justify-center group-hover:border-primary group-hover:bg-primary transition-all duration-500">
+                <ChevronRight class="w-4 h-4 text-border group-hover:text-primary-foreground group-hover:translate-x-0.5 transition-all" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="plugins.length === 0 && !loading" class="col-span-full py-40 text-center">
+            <div class="w-20 h-20 bg-elevated border border-border rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-island">
+              <Info class="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h3 class="text-2xl font-black text-foreground uppercase tracking-widest mb-3">Void Registry</h3>
+            <p class="text-sm text-secondary font-medium mb-12 max-w-md mx-auto leading-relaxed uppercase tracking-widest">Your artifact search returned no matches from our central distribution network.</p>
+            <button @click="searchQuery = ''; fetchPlugins()" class="px-12 py-4 bg-foreground text-background dark:bg-white dark:text-black text-xs font-black uppercase tracking-[0.4em] hover:scale-105 transition-all rounded-2xl shadow-island">
+              RESET_INDEX
+            </button>
+          </div>
         </div>
       </div>
     </main>
 
     <!-- Footer -->
-    <footer class="border-t border-border bg-card py-8 px-6 mt-auto">
-      <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-        <div class="flex flex-col items-center md:items-start gap-3">
-          <div class="flex items-center gap-2">
-            <div class="w-6 h-6 bg-emerald-500 rounded-md flex items-center justify-center">
-              <ShoppingBag class="w-4 h-4 text-black" />
+    <footer class="border-t border-border bg-surface py-16 px-6 mt-auto">
+      <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
+        <div class="flex flex-col items-center md:items-start gap-6">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-glow">
+              <Database class="w-6 h-6 text-primary-foreground" />
             </div>
-            <span class="font-bold text-foreground uppercase tracking-widest text-xs">StressPilot</span>
+            <span class="font-black text-foreground uppercase tracking-tight text-xl italic">STRESS<span class="text-primary">PILOT</span></span>
           </div>
-          <p class="text-[10px] text-muted-foreground font-medium">© 2026 StressPilot Marketplace. All rights reserved.</p>
+          <p class="text-[10px] text-secondary font-black uppercase tracking-[0.4em]">Distributing high-performance artifacts since 2026</p>
         </div>
-        <div class="flex items-center gap-6 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-          <a href="#" class="hover:text-emerald-500 transition-colors">Privacy</a>
-          <a href="#" class="hover:text-emerald-500 transition-colors">Terms</a>
-          <a href="#" class="hover:text-emerald-500 transition-colors">Contact</a>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-12 text-[11px] font-black text-secondary uppercase tracking-[0.2em]">
+          <div class="flex flex-col gap-4">
+            <span class="text-foreground border-b border-primary/30 pb-2">Resources</span>
+            <a href="#" class="hover:text-primary transition-colors">Documentation</a>
+            <a href="#" class="hover:text-primary transition-colors">API Reference</a>
+          </div>
+          <div class="flex flex-col gap-4">
+            <span class="text-foreground border-b border-primary/30 pb-2">Legal</span>
+            <a href="#" class="hover:text-primary transition-colors">Privacy Policy</a>
+            <a href="#" class="hover:text-primary transition-colors">Terms of Service</a>
+          </div>
+          <div class="flex flex-col gap-4">
+            <span class="text-foreground border-b border-primary/30 pb-2">Contact</span>
+            <a href="#" class="hover:text-primary transition-colors">Support</a>
+            <a href="#" class="hover:text-primary transition-colors">Registry Status</a>
+          </div>
         </div>
       </div>
     </footer>
 
-    <!-- ── Dialogs ────────────────────────────────────────────────────────── -->
+    <!-- Dialogs -->
     <Dialog v-model:open="isDialogOpen">
-      <DialogContent class="sm:max-w-[600px] bg-card border-border rounded-2xl p-0 overflow-hidden shadow-2xl">
-        <div class="bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent p-8">
-
-          <!-- CREATE STEP -->
+      <DialogContent class="sm:max-w-[600px] bg-surface border-border rounded-3xl p-0 overflow-hidden shadow-2xl">
+        <div class="p-12 relative overflow-hidden">
+          <div class="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-primary/5 rounded-full blur-[100px] pointer-events-none"></div>
+          
+          <!-- CREATE -->
           <template v-if="dialogMode === 'create'">
-            <DialogHeader class="mb-6">
-              <DialogTitle class="text-2xl font-black text-foreground tracking-tight">New Extension</DialogTitle>
-              <DialogDescription class="text-muted-foreground text-sm font-medium mt-1">
-                Register your plugin metadata. You'll upload the binary in the next step.
-              </DialogDescription>
-            </DialogHeader>
-            <div class="space-y-4">
-              <div class="grid grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Extension Slug</Label>
-                  <Input v-model="createForm.code" placeholder="my-plugin" class="bg-background border-border rounded-xl h-11 text-sm" />
-                </div>
-                <div class="space-y-2">
-                  <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Version</Label>
-                  <Input v-model="createForm.version" placeholder="1.0.0" class="bg-background border-border rounded-xl h-11 text-sm" />
-                </div>
-              </div>
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Title</Label>
-                <Input v-model="createForm.name" placeholder="My Awesome Plugin" class="bg-background border-border rounded-xl h-11 text-sm" />
-              </div>
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Tags</Label>
-                <div class="flex gap-2">
-                  <Input v-model="tagInput" placeholder="Add a tag..." class="bg-background border-border rounded-xl h-11 text-sm" @keyup.enter="addTag" />
-                  <Button @click="addTag" variant="outline" class="h-11 rounded-xl border-border text-foreground font-bold px-4">Add</Button>
-                </div>
-                <div v-if="createForm.tags && createForm.tags.length > 0" class="flex flex-wrap gap-2 mt-2">
-                  <span v-for="tag in createForm.tags" :key="tag" class="px-2 py-1 rounded bg-emerald-500/20 text-[10px] font-bold text-emerald-500 flex items-center gap-1">
-                    {{ tag }}
-                    <button @click="removeTag(tag)" class="hover:text-foreground">&times;</button>
-                  </span>
-                </div>
-              </div>
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Description</Label>
-                <textarea v-model="createForm.description" placeholder="What does this plugin do?" class="w-full bg-background border border-border rounded-xl p-3 text-sm h-24 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"></textarea>
-              </div>
-              <p v-if="submitError" class="text-xs text-rose-400 font-medium">{{ submitError }}</p>
+            <div class="mb-12">
+              <h2 class="text-3xl font-black text-foreground tracking-tight uppercase italic">Register <span class="text-primary">Artifact</span></h2>
+              <p class="text-secondary text-[11px] font-black uppercase tracking-widest mt-2 border-l-2 border-primary pl-3">Initialize a new distribution entry</p>
             </div>
-            <div class="pt-6">
-              <Button :disabled="submitting" @click="submitCreate" class="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-base shadow-xl">
-                <Loader2 v-if="submitting" class="w-4 h-4 animate-spin mr-2" />
-                CREATE &amp; PROCEED TO UPLOAD
-              </Button>
+            
+            <div class="space-y-8">
+              <div class="grid grid-cols-2 gap-8">
+                <div class="space-y-3">
+                  <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Artifact Slug</Label>
+                  <Input v-model="createForm.code" placeholder="my-plugin-core" class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-primary/50 transition-all shadow-inner" />
+                </div>
+                <div class="space-y-3">
+                  <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Initial Version</Label>
+                  <Input v-model="createForm.version" placeholder="1.0.0" class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-primary/50 transition-all shadow-inner" />
+                </div>
+              </div>
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Artifact Name</Label>
+                <Input v-model="createForm.name" placeholder="StressPilot Awesome Extension" class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-primary/50 transition-all shadow-inner" />
+              </div>
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">GitHub Repository (Optional)</Label>
+                <Input v-model="createForm.github_repo" placeholder="https://github.com/user/repo" class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-primary/50 transition-all shadow-inner" />
+              </div>
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Technical Overview</Label>
+                <textarea v-model="createForm.description" placeholder="Optional: Brief technical overview..." class="w-full bg-elevated border border-border rounded-2xl p-5 text-sm focus:border-primary/50 outline-none resize-none font-medium text-foreground placeholder:text-zinc-700 min-h-[120px] shadow-inner"></textarea>
+              </div>
+              <p v-if="submitError" class="text-[11px] text-destructive font-bold uppercase tracking-widest bg-destructive/5 p-3 rounded-lg border border-destructive/10 flex items-center gap-2">
+                <AlertCircle class="w-4 h-4" /> {{ submitError }}
+              </p>
+            </div>
+            
+            <div class="mt-12">
+              <button :disabled="submitting" @click="submitCreate" class="w-full h-16 bg-foreground text-background dark:bg-white dark:text-black font-black text-sm uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 rounded-2xl shadow-island active:scale-[0.98]">
+                <Loader2 v-if="submitting" class="w-5 h-5 animate-spin" />
+                INITIALIZE_REGISTRY
+              </button>
             </div>
           </template>
 
-          <!-- UPLOAD STEP -->
+          <!-- UPLOAD -->
           <template v-else-if="dialogMode === 'upload'">
-            <DialogHeader class="mb-6">
-              <DialogTitle class="text-2xl font-black text-foreground tracking-tight">Upload Binary</DialogTitle>
-              <DialogDescription class="text-muted-foreground text-sm font-medium mt-1">
-                Select the plugin binary. After a successful upload the plugin goes live.
-                If the upload fails you can retry here at any time.
-              </DialogDescription>
-            </DialogHeader>
-            <div class="space-y-4">
+            <div class="mb-12">
+              <h2 class="text-3xl font-black text-foreground tracking-tight uppercase italic">Attach <span class="text-primary">Binary</span></h2>
+              <p class="text-secondary text-[11px] font-black uppercase tracking-widest mt-2 border-l-2 border-primary pl-3">Upload verified .jar artifact</p>
+            </div>
+            
+            <div class="space-y-8">
               <div
-                class="border-2 border-dashed border-border rounded-xl h-36 flex flex-col items-center justify-center cursor-pointer hover:bg-secondary/50 hover:border-emerald-500/30 transition-all group"
+                class="border-2 border-dashed border-border h-60 flex flex-col items-center justify-center cursor-pointer hover:bg-elevated/50 hover:border-primary/30 transition-all group rounded-3xl relative overflow-hidden bg-elevated/20 shadow-inner"
                 @click="($refs.fileInput as HTMLInputElement).click()"
               >
-                <UploadCloud class="w-7 h-7 text-emerald-500 mb-2 group-hover:scale-110 transition-transform" />
-                <p class="text-sm font-bold text-foreground text-center px-4 truncate w-full text-center">
-                  {{ selectedFile ? selectedFile.name : 'Click to select binary' }}
+                <UploadCloud class="w-14 h-14 text-muted-foreground group-hover:text-primary transition-all mb-6 group-hover:-translate-y-1" />
+                <p class="text-sm font-bold text-foreground text-center px-10 truncate w-full">
+                  {{ selectedFile ? selectedFile.name : 'SELECT_ARTIFACT_OBJECT' }}
                 </p>
-                <p class="text-[9px] text-muted-foreground mt-1 uppercase tracking-[0.1em] font-black">JAR or JS · MAX 210 MB</p>
+                <p class="text-[10px] text-secondary mt-3 uppercase tracking-[0.3em] font-black">Binary Limit: 210MB</p>
                 <input ref="fileInput" type="file" class="hidden" @change="handleFileChange" />
               </div>
-              <p v-if="fileError" class="text-xs text-rose-400 font-medium">{{ fileError }}</p>
-              <p v-if="submitError" class="text-xs text-rose-400 font-medium">{{ submitError }}</p>
+              <p v-if="fileError" class="text-[11px] text-destructive font-bold uppercase tracking-widest bg-destructive/5 p-3 rounded-lg border border-destructive/10">{{ fileError }}</p>
+              <p v-if="submitError" class="text-[11px] text-destructive font-bold uppercase tracking-widest bg-destructive/5 p-3 rounded-lg border border-destructive/10">{{ submitError }}</p>
             </div>
-            <div class="pt-6 flex gap-3">
-              <Button variant="outline" class="flex-1 h-12 rounded-xl border-border text-foreground font-bold" @click="dialogMode = null">
-                Later
-              </Button>
-              <Button
+            
+            <div class="mt-12 grid grid-cols-2 gap-6">
+              <button @click="dialogMode = null" class="h-16 border border-border text-secondary hover:text-foreground hover:bg-elevated font-black text-xs uppercase tracking-[0.3em] transition-all rounded-2xl active:scale-[0.98]">
+                LATER
+              </button>
+              <button
                 :disabled="submitting || !selectedFile"
                 @click="submitUpload"
-                class="flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-base shadow-xl disabled:opacity-50"
+                class="h-16 bg-primary text-primary-foreground font-black text-xs uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 disabled:opacity-30 rounded-2xl shadow-glow active:scale-[0.98]"
               >
-                <Loader2 v-if="submitting" class="w-4 h-4 animate-spin mr-2" />
-                UPLOAD &amp; PUBLISH
-              </Button>
+                <Loader2 v-if="submitting" class="w-5 h-5 animate-spin" />
+                COMMIT_ARTIFACT
+              </button>
             </div>
           </template>
 
-          <!-- EDIT STEP -->
+          <!-- EDIT -->
           <template v-else-if="dialogMode === 'edit'">
-            <DialogHeader class="mb-6">
-              <DialogTitle class="text-2xl font-black text-foreground tracking-tight">Edit Metadata</DialogTitle>
-              <DialogDescription class="text-muted-foreground text-sm font-medium mt-1">
-                Update the plugin name, description or tags. Code is immutable.
-              </DialogDescription>
-            </DialogHeader>
-            <div class="space-y-4">
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Title</Label>
-                <Input v-model="editForm.name" class="bg-background border-border rounded-xl h-11 text-sm" />
+            <div class="mb-12">
+              <h2 class="text-3xl font-black text-foreground tracking-tight uppercase italic">Update <span class="text-primary">Metadata</span></h2>
+              <p class="text-secondary text-[11px] font-black uppercase tracking-widest mt-2 border-l-2 border-primary pl-3">Modify artifact technical profile</p>
+            </div>
+            
+            <div class="space-y-8">
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Artifact Name</Label>
+                <Input v-model="editForm.name" class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground focus:border-primary/50 transition-all shadow-inner" />
               </div>
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Tags</Label>
-                <div class="flex gap-2">
-                  <Input v-model="editTagInput" placeholder="Add a tag..." class="bg-background border-border rounded-xl h-11 text-sm" @keyup.enter="addEditTag" />
-                  <Button @click="addEditTag" variant="outline" class="h-11 rounded-xl border-border text-foreground font-bold px-4">Add</Button>
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Project Identifiers (Tags)</Label>
+                <div class="flex gap-3">
+                  <Input v-model="editTagInput" placeholder="Add identifier..." class="bg-elevated border-border rounded-xl h-14 text-sm font-bold text-foreground focus:border-primary/50 transition-all shadow-inner" @keyup.enter="addEditTag" />
+                  <button @click="addEditTag" class="px-8 bg-foreground text-background dark:bg-white dark:text-black text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all rounded-xl shadow-island">PUSH</button>
                 </div>
-                <div v-if="editForm.tags && editForm.tags.length > 0" class="flex flex-wrap gap-2 mt-2">
-                  <span v-for="tag in editForm.tags" :key="tag" class="px-2 py-1 rounded bg-emerald-500/20 text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                <div v-if="editForm.tags && editForm.tags.length > 0" class="flex flex-wrap gap-3 mt-4">
+                  <span v-for="tag in editForm.tags" :key="tag" class="px-4 py-2 bg-primary/10 text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-3 border border-primary/20 rounded-xl">
                     {{ tag }}
-                    <button @click="removeEditTag(tag)" class="hover:text-foreground">&times;</button>
+                    <button @click="removeEditTag(tag)" class="hover:text-foreground transition-colors font-black text-lg leading-none">&times;</button>
                   </span>
                 </div>
               </div>
-              <div class="space-y-2">
-                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 ml-1">Description</Label>
-                <textarea v-model="editForm.description" class="w-full bg-background border border-border rounded-xl p-3 text-sm h-28 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"></textarea>
+              <div class="space-y-3">
+                <Label class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary ml-1">Technical Overview</Label>
+                <textarea v-model="editForm.description" class="w-full bg-elevated border border-border rounded-2xl p-5 text-sm focus:border-primary/50 outline-none resize-none font-medium text-foreground min-h-[140px] shadow-inner"></textarea>
               </div>
-              <p v-if="submitError" class="text-xs text-rose-400 font-medium">{{ submitError }}</p>
+              <p v-if="submitError" class="text-[11px] text-destructive font-bold uppercase tracking-widest">{{ submitError }}</p>
             </div>
-            <div class="pt-6">
-              <Button :disabled="submitting" @click="submitEdit" class="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-base shadow-xl">
-                <Loader2 v-if="submitting" class="w-4 h-4 animate-spin mr-2" />
-                UPDATE
-              </Button>
+            
+            <div class="mt-12">
+              <button :disabled="submitting" @click="submitEdit" class="w-full h-16 bg-primary text-primary-foreground font-black text-sm uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 rounded-2xl shadow-glow active:scale-[0.98]">
+                <Loader2 v-if="submitting" class="w-5 h-5 animate-spin" />
+                COMMIT_INDEX_UPDATE
+              </button>
             </div>
           </template>
-
-          <!-- VERSIONS STEP -->
-          <template v-else-if="dialogMode === 'versions'">
-            <DialogHeader class="mb-6">
-              <DialogTitle class="text-2xl font-black text-foreground tracking-tight">Manage Versions</DialogTitle>
-              <DialogDescription class="text-muted-foreground text-sm font-medium mt-1">
-                View and manage available versions for <span class="text-emerald-500">{{ activePlugin?.name }}</span>.
-              </DialogDescription>
-            </DialogHeader>
-            <div class="space-y-4">
-              <div v-if="activePlugin?.versions && activePlugin.versions.length > 0" class="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                <div
-                  v-for="v in activePlugin.versions"
-                  :key="v.version"
-                  class="flex items-center justify-between p-4 rounded-xl bg-background border border-border group/v"
-                >
-                  <div class="flex flex-col gap-0.5">
-                    <div class="flex items-center gap-2">
-                      <span class="font-bold text-foreground text-sm">v{{ v.version }}</span>
-                      <span
-                        class="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full"
-                        :class="v.status === 'PUBLISHED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'"
-                      >
-                        {{ v.status }}
-                      </span>
-                    </div>
-                    <span class="text-[10px] text-muted-foreground">{{ formatDate(v.created_at) }} · {{ v.download_count }} downloads</span>
-                  </div>
-                  <div class="flex items-center gap-2 opacity-0 group-hover/v:opacity-100 transition-opacity">
-                    <Button
-                      v-if="v.status === 'DRAFT'"
-                      size="sm"
-                      variant="ghost"
-                      class="h-8 text-[10px] font-bold text-emerald-500 hover:bg-emerald-500/10"
-                      @click="updateVersionStatus(v.version, 'PUBLISHED')"
-                    >
-                      Publish
-                    </Button>
-                    <Button
-                      v-else
-                      size="sm"
-                      variant="ghost"
-                      class="h-8 text-[10px] font-bold text-amber-500 hover:bg-amber-500/10"
-                      @click="updateVersionStatus(v.version, 'DRAFT')"
-                    >
-                      Unpublish
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      class="h-8 w-8 rounded-full hover:bg-rose-500/10 hover:text-rose-400"
-                      @click="deleteVersion(v.version)"
-                    >
-                      <Trash2 class="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <div v-else class="py-12 text-center opacity-50">
-                <p class="text-sm font-medium text-muted-foreground">No versions found.</p>
-              </div>
-            </div>
-            <div class="pt-6">
-              <Button @click="dialogMode = null" class="w-full h-12 rounded-xl border border-border text-foreground font-bold">
-                CLOSE
-              </Button>
-            </div>
-          </template>
-
         </div>
       </DialogContent>
     </Dialog>
@@ -855,17 +610,43 @@ onMounted(async () => {
 </template>
 
 <style>
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 20px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(16, 185, 129, 0.2); }
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700;900&display=swap');
 
-.animate-pulse-slow {
-  animation: pulse 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+:root {
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 0.1; }
-  50% { opacity: 0.3; }
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background-color: hsl(var(--background));
+}
+
+.font-mono {
+  font-family: var(--font-mono) !important;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-muted-foreground/20 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-primary/50; }
+
+.shadow-island {
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3);
+}
+
+.dark .shadow-island {
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.7);
+}
+
+.shadow-island-hover {
+  box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.4);
+}
+
+.dark .shadow-island-hover {
+  box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.8);
+}
+
+.shadow-glow {
+  box-shadow: 0 0 20px -5px hsla(var(--primary) / 0.4);
 }
 </style>

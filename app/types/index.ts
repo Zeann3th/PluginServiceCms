@@ -3,7 +3,7 @@ export interface UserInfo {
   username: string;
 }
 
-export type PluginStatus = 'DRAFT' | 'PUBLISHED';
+export type PluginStatus = 'DRAFTED' | 'PUBLISHED';
 export type InstallationStatus = 'NOT_INSTALLED' | 'INSTALLED' | 'UPDATABLE';
 
 export interface PluginVersionResponse {
@@ -18,6 +18,8 @@ export interface Plugin {
   code: string;
   name: string;
   description: string | null;
+  githubRepo: string | null;
+  status: PluginStatus;
   publisher: UserInfo;
   upvoteCount: number;
   downvoteCount: number;
@@ -34,6 +36,8 @@ export interface PluginResponse {
   code: string;
   name: string;
   description: string | null;
+  github_repo: string | null;
+  status: PluginStatus;
   publisher: UserInfo;
   upvote_count: number;
   downvote_count: number;
@@ -48,33 +52,31 @@ export interface PluginResponse {
 export interface CreatePluginRequest {
   code: string;
   name: string;
-  description?: string;
   version: string;
+  description?: string;
+  github_repo?: string;
   tags?: string[];
+}
+
+export interface UpdatePluginRequest {
+  name?: string;
+  description?: string;
+  github_repo?: string;
+  status?: PluginStatus;
+  tags?: string[];
+}
+
+export interface UploadPluginRequest {
+  filename: string;
+  file_size: number;
 }
 
 export interface CreatePluginResponse {
   plugin_id: number;
 }
 
-export interface UploadPluginRequest {
-  filename: string;
-  file_size: number;
-  version?: string;
-}
-
 export interface UploadPluginResponse {
   upload_url: string;
-}
-
-export interface UpdatePluginRequest {
-  name?: string;
-  description?: string;
-  tags?: string[];
-}
-
-export interface UpdatePluginVersionRequest {
-  status?: PluginStatus;
 }
 
 export interface PaginatedResponse<T> {

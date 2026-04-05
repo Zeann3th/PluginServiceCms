@@ -36,6 +36,14 @@ module.exports = {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
         },
+        surface: {
+          DEFAULT: "hsl(var(--surface))",
+          foreground: "hsl(var(--surface-foreground))",
+        },
+        elevated: {
+          DEFAULT: "hsl(var(--elevated))",
+          foreground: "hsl(var(--elevated-foreground))",
+        },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
@@ -63,6 +71,13 @@ module.exports = {
         sm: "calc(var(--radius) - 4px)",
         xl: "1rem",
         '2xl': "1.5rem",
+        '3xl': "2rem",
+        '4xl': "2.5rem",
+      },
+      boxShadow: {
+        'island': '0 10px 40px -10px rgba(0, 0, 0, 0.5)',
+        'island-hover': '0 20px 60px -12px rgba(0, 0, 0, 0.6)',
+        'glow': '0 0 20px -5px hsla(var(--primary) / 0.3)',
       },
       backgroundImage: {
         'glow-conic': 'conic-gradient(from 180deg at 50% 50%, #10b981 0deg, #059669 120deg, #047857 240deg, #10b981 360deg)',
